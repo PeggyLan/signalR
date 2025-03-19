@@ -12,13 +12,17 @@ div.container
       option(value="lunch") 午餐吃什麼研究所
       option(value="night") 夜貓子讀書會
       option(value="alarm") 鬧鐘互助會
+  .form-group
+    label 發送私人消息給:
+    input(v-model="sendPrivateMessageTarget" placeholder="請輸入使用者名稱")
 
   .form-group
     label Message:
     input(v-model="messageInput" placeholder="請輸入訊息")
 
-  button.btn(@click="sendMessage('group')") Send to group
-  button.btn(@click="sendMessage('broadcast')") Send to all
+  button.btn(@click="sendMessage('private')" style="background: #8F4586") Send to private
+  button.btn(@click="sendMessage('group')" style="background: #005AB5") Send to group
+  button.btn(@click="sendMessage('broadcast')" style="background: #707038") Send to all
 
   ul.messages
     li.message(v-for="msg in messages" :key="msg.id")
@@ -37,6 +41,7 @@ export default defineComponent({
     const userName = ref('User_' + Math.floor(Math.random() * 1000))
     const selectedGroup = ref('lunch')
     const messageInput = ref('')
+    const sendPrivateMessageTarget = ref('')
     const messages = ref<{ id: number; sender: string; group: string; content: string }[]>([])
     const toastMessage = ref<string | null>(null)
     const isConnected = ref(false)
@@ -54,6 +59,13 @@ export default defineComponent({
       connection.value.onclose(async (err) => {
         console.log('SignalR 斷線:', err)
         isConnected.value = false
+      })
+
+      // 接收私人訊息
+      connection.value?.on('ReceivePrivateMessage', (sender: string, message: string) => {
+        messages.value.push({ id: messages.value.length + 1, sender, group: 'Private', content: message })
+        console.log(message)
+        showToast(`Private: ${message}`)
       })
 
       // 接收群組訊息
@@ -114,7 +126,11 @@ export default defineComponent({
       }
 
       // 根據選擇的群組或廣播來發送訊息
-      if (type === 'group') {
+      if (type === 'private') {
+        connection.value?.invoke('SendToPrivate', sendPrivateMessageTarget.value, userName.value, messageInput.value)
+          .catch(err => console.error('發送私人訊息錯誤:', err))
+        sendPrivateMessageTarget.value = ''
+      } else if (type === 'group') {
         connection.value?.invoke('SendToGroup', selectedGroup.value, userName.value, messageInput.value)
           .catch(err => console.error('發送訊息錯誤:', err))
       } else {
@@ -134,7 +150,7 @@ export default defineComponent({
       }, 3000)
     }
 
-    return { userName, selectedGroup, messageInput, messages, toastMessage, sendMessage, joinGroup, isConnected }
+    return { userName, selectedGroup, messageInput, sendPrivateMessageTarget, messages, toastMessage, sendMessage, joinGroup, isConnected }
   }
 })
 
@@ -156,7 +172,6 @@ export default defineComponent({
       border 1px solid #ccc
       border-radius 5px
   .btn
-    background #4CAF50
     color white
     padding 10px 20px
     border none
@@ -164,7 +179,7 @@ export default defineComponent({
     cursor pointer
     margin 0 10px
     &:hover
-      background #45a049
+      opacity .5
   .messages
     margin-top 20px
     list-style none
