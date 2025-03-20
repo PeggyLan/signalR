@@ -20,9 +20,7 @@ div.container
     label Message:
     input(v-model="messageInput" placeholder="請輸入訊息")
 
-  button.btn(@click="sendMessage('private')" style="background: #8F4586") Send to private
-  button.btn(@click="sendMessage('group')" style="background: #005AB5") Send to group
-  button.btn(@click="sendMessage('broadcast')" style="background: #707038") Send to all
+  button.btn(v-for="btn in buttons" :key="btn.type" @click="sendMessage(btn.type)" :style="{ background: btn.color }") {{ btn.label }}
 
   ul.messages
     li.message(v-for="msg in messages" :key="msg.id")
@@ -46,7 +44,12 @@ export default defineComponent({
     const toastMessage = ref<string | null>(null)
     const isConnected = ref(false)
     const connection = ref<signalR.HubConnection | null>(null)
-    let msgId = 0
+
+    const buttons = ref([
+      { type: 'private', label: 'Send to private', color: '#8F4586' },
+      { type: 'group', label: 'Send to group', color: '#005AB5' },
+      { type: 'broadcast', label: 'Send to all', color: '#707038' }
+    ])
 
     // 初始化 SignalR 連線
     onMounted(async () => {
@@ -55,7 +58,17 @@ export default defineComponent({
         .withAutomaticReconnect()
         .build()
 
-      // 設置連線成功與失敗回調
+      // 重連
+      connection.value.onreconnecting((error) => {
+        console.log('SignalR 正在重連...', error)
+      })
+
+      // 重連成功
+      connection.value.onreconnected((connectionId) => {
+        console.log('SignalR 重連成功，連線ID:', connectionId)
+      })
+
+      // 失敗回調
       connection.value.onclose(async (err) => {
         console.log('SignalR 斷線:', err)
         isConnected.value = false
@@ -70,7 +83,6 @@ export default defineComponent({
 
       // 接收群組訊息
       connection.value.on('ReceiveGroupMessage', (sender: string, group: string, message: string) => {
-        msgId++
         messages.value.push({ id: messages.value.length + 1, sender, group, content: message })
         showToast(`${sender} @ ${group}: ${message}`)
       })
@@ -96,11 +108,11 @@ export default defineComponent({
     watch(selectedGroup, (newGroup, oldGroup) => {
       if (newGroup !== oldGroup) {
         // 當群組改變時，先退出舊群組
-        leaveAndJoinGroup(oldGroup)
+        leaveGroup(oldGroup)
       }
     })
 
-    function leaveAndJoinGroup (oldGroup: string) {
+    function leaveGroup (oldGroup: string) {
       if (connection.value?.state === signalR.HubConnectionState.Connected) {
         connection.value?.invoke('LeaveGroup', oldGroup) // 離開舊群組
           .catch(err => console.error('離開舊群組失敗:', err))
@@ -119,23 +131,30 @@ export default defineComponent({
     function sendMessage (type: string) {
       if (!userName.value) return alert('請輸入使用者名稱')
       if (!messageInput.value.trim()) return alert('請輸入訊息')
-
       if (!isConnected.value) {
         alert('尚未連線，請稍候...')
         return
       }
 
       // 根據選擇的群組或廣播來發送訊息
-      if (type === 'private') {
-        connection.value?.invoke('SendToPrivate', sendPrivateMessageTarget.value, userName.value, messageInput.value)
-          .catch(err => console.error('發送私人訊息錯誤:', err))
-        sendPrivateMessageTarget.value = ''
-      } else if (type === 'group') {
-        connection.value?.invoke('SendToGroup', selectedGroup.value, userName.value, messageInput.value)
-          .catch(err => console.error('發送訊息錯誤:', err))
-      } else {
-        connection.value?.invoke('Broadcast', messageInput.value)
-          .catch(err => console.error('發送廣播訊息錯誤:', err))
+      const msg = messageInput.value
+      const user = userName.value
+
+      switch (type) {
+        case 'private':
+          connection.value?.invoke('SendToPrivate', sendPrivateMessageTarget.value, user, msg)
+            .catch(err => console.error('發送私人訊息錯誤:', err))
+          sendPrivateMessageTarget.value = ''
+          break
+
+        case 'group':
+          connection.value?.invoke('SendToGroup', selectedGroup.value, user, msg)
+            .catch(err => console.error('發送訊息錯誤:', err))
+          break
+
+        default:
+          connection.value?.invoke('Broadcast', msg)
+            .catch(err => console.error('發送廣播訊息錯誤:', err))
       }
 
       // 清空輸入框
@@ -150,7 +169,7 @@ export default defineComponent({
       }, 3000)
     }
 
-    return { userName, selectedGroup, messageInput, sendPrivateMessageTarget, messages, toastMessage, sendMessage, joinGroup, isConnected }
+    return { userName, selectedGroup, messageInput, sendPrivateMessageTarget, messages, toastMessage, sendMessage, joinGroup, isConnected, buttons }
   }
 })
 
@@ -179,7 +198,7 @@ export default defineComponent({
     cursor pointer
     margin 0 10px
     &:hover
-      opacity .5
+      opacity .9
   .messages
     margin-top 20px
     list-style none
