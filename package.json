@@ -10,6 +10,7 @@
   "dependencies": {
     "@microsoft/signalr": "^8.0.7",
     "@microsoft/signalr-protocol-msgpack": "^8.0.7",
+    "@types/webpack-env": "^1.18.8",
     "core-js": "^3.8.3",
     "cors": "^2.8.5",
     "express": "^4.21.2",
